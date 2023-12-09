@@ -4,21 +4,27 @@
 
 #define NUM_EVENTS 5
 
-pthread_mutex_t *mutex = new PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t *condition = new PTHREAD_COND_INITIALIZER;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_producer = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_consumer = PTHREAD_COND_INITIALIZER;
 
-volatile int events[NUM_EVENTS] = { 0 };  
+volatile int events[NUM_EVENTS] = { 0 };
+
 
 void *producerThread(void *arg) {
     for (int i = 0; i < NUM_EVENTS; ++i) {
-        sleep(1);  // Задержка в одну секунду
+        sleep(1); 
 
-        pthread_mutex_lock(mutex);
-        events[i] = 1; 
+        pthread_mutex_lock(&mutex);
+        
+        while (events[i]) 
+            pthread_cond_wait(&cond_producer, &mutex);
+
+        events[i] = 1;
         printf("Event %d Produced.\n", i + 1);
-        pthread_cond_signal(condition);  
-        sleep(1);
-        pthread_mutex_unlock(mutex);
+        
+        pthread_cond_signal(&cond_consumer);
+        pthread_mutex_unlock(&mutex);
     }
 
     return nullptr;
@@ -26,12 +32,17 @@ void *producerThread(void *arg) {
 
 void *consumerThread(void *arg) {
     for (int i = 0; i < NUM_EVENTS; ++i) {
-        pthread_mutex_lock(mutex);
-        while (!events[i]) {
-            pthread_cond_wait(condition, mutex);
-	        printf("Event %d Consumed.\n\n", i + 1);
-        }
-        pthread_mutex_unlock(mutex);
+        pthread_mutex_lock(&mutex);
+        
+        while (!events[i]) 
+            pthread_cond_wait(&cond_consumer, &mutex);
+
+        printf("Event %d Consumed.\n\n", i + 1);
+        events[i] = 0;
+
+        pthread_cond_signal(&cond_producer);
+        
+		pthread_mutex_unlock(&mutex);
     }
 
     return nullptr;
@@ -43,8 +54,8 @@ int main() {
     pthread_create(&producer, NULL, producerThread, NULL);
     pthread_create(&consumer, NULL, consumerThread, NULL);
 
-    pthread_join(producer, NULL);
     pthread_join(consumer, NULL);
+    pthread_join(producer, NULL);
 
     return 0;
 }
